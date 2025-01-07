@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Screen Stream</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"
+        integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+</head>
+
+<body>
+    <h1>Admin Screen Stream</h1>
+    <video id="video" width="720" height="500" controls autoplay></video>
+
+    <script>
+        const socket = io('http://localhost:5000');  // Replace with your backend server URL
+        let mediaSource = new MediaSource();
+        let sourceBuffer = null;
+        let queue = [];
+        let videoElement = document.getElementById("video");
+
+        // Set video element source to the MediaSource object
+        videoElement.src = URL.createObjectURL(mediaSource);
+
+        // Handle MediaSource initialization
+        mediaSource.addEventListener('sourceopen', () => {
+            console.log("MediaSource opened");
+
+            try {
+                sourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs="vp8"');
+            } catch (err) {
+                console.error("Error creating SourceBuffer:", err);
+                return;
+            }
+
+            sourceBuffer.addEventListener('updateend', () => {
+                if (queue.length > 0 && !sourceBuffer.updating) {
+                    sourceBuffer.appendBuffer(queue.shift());
+                }
+            });
+        });
+
+        // Handle incoming video chunks
+        socket.on('screen-stream', async (data) => {
+            console.log('Received video chunk');
+
+            const arrayBuffer = data instanceof ArrayBuffer ? data : new Uint8Array(data).buffer;
+
+            if (sourceBuffer && !sourceBuffer.updating) {
+                try {
+                    sourceBuffer.appendBuffer(arrayBuffer);
+                } catch (err) {
+                    console.error('Error appending buffer:', err);
+                }
+            } else {
+                queue.push(arrayBuffer);
+            }
+        });
+
+        $("#video").on("mousemove", function (e) {
+            let posX = $(this).offset().left;
+            let posY = $(this).offset().top;
+
+            let x = e.pageX - posX;
+            let y = e.pageY - posY;
+
+            console.log(`Mouse Coordinates (relative to #video): X=${x}, Y=${y}`);
+
+            let obj = { x: x, y: y };
+            socket.emit("mouse-move", obj);
+        });
+
+        // Mouse click event listener
+        $("#video").on("click", function () {
+            console.log("Mouse Click detected on video");
+            socket.emit("mouse-click");
+        });
+        
+        // Keyup event listener
+        $(window).on("keyup", function (e) {
+            console.log(`Key Up: ${e.key}`);
+            let obj = { key: e.key };
+            socket.emit("mouse-type", obj); // No need to stringify
+        });
+
+        // Handle connection errors
+        socket.on('connect_error', (err) => {
+            console.error("Socket connection error:", err);
+        });
+
+        socket.on('connect', () => {
+            console.log("Connected to the server.");
+        });
+
+        socket.on('disconnect', () => {
+            console.warn("Disconnected from the server.");
+        });
+    </script>
+</body>
+
+</html>
